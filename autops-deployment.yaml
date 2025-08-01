@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autops
+  labels:
+    app: autops
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: autops
+  template:
+    metadata:
+      labels:
+        app: autops
+    spec:
+      containers:
+      - name: autops
+        image: autops:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: autops-service
+spec:
+  selector:
+    app: autops
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: LoadBalancer

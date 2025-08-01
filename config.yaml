@@ -1,0 +1,34 @@
+app:
+  name: "autops"
+  env: "production" # 开发模式 development，默认生产模式
+  port: 8888
+  timeout: 30s
+
+logger:
+  level: "info"
+  format: "json"
+  output: "logs/"
+  max_size: 10
+  max_backups: 30
+  max_age: 7
+  compress: true
+
+mysql:
+  host: "localhost"
+  port: 3306
+  username: "root"
+  password: "123456"
+  database: "autops"
+  charset: "utf8mb4"
+  max_open_conns: 100
+  max_idle_conns: 20
+  conn_max_lifetime: 300s
+
+jwt:
+  secret: "123sdfa23r23sdfadfas"
+  expires_hours: 24
+
+cors:
+  allow_origins: ["*"]
+  allow_credentials: true
+  max_age: 12
