@@ -52,11 +52,11 @@ func SyncCasbinPolicy() error {
 
 	// 4. 保存策略
 	if err := global.Enforcer.SavePolicy(); err != nil {
-		logger.Logger.Error("保存Casbin策略失败", zap.Error(err))
+		logger.Logger.Error("保存权限策略失败", zap.Error(err))
 		return err
 	}
 
-	logger.Logger.Info("Casbin策略同步成功",
+	logger.Logger.Info("权限策略同步成功",
 		zap.Int("user_role_count", len(userRoles)),
 		zap.Int("role_permission_count", len(rolePermissions)))
 	return nil

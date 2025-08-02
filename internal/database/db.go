@@ -37,7 +37,7 @@ func InitDB() error {
 
 	// 连接数据库
 	var err error
-	logger.Logger.Info("正在连接数据库: " + dsn)
+	// logger.Logger.Info("正在连接数据库: " + dsn)
 	DB, err = gorm.Open(mysql.Open(dsn), &gorm.Config{
 		Logger: glog.Default.LogMode(logLevel),
 	})
@@ -46,7 +46,7 @@ func InitDB() error {
 	}
 
 	// 获取底层sql.DB并设置连接池
-	logger.Logger.Info("数据库连接成功，正在设置连接池参数")
+	// logger.Logger.Info("数据库连接成功，正在设置连接池参数")
 	sqlDB, err := DB.DB()
 	if err != nil {
 		return err
@@ -54,11 +54,11 @@ func InitDB() error {
 
 	// 设置连接池参数
 	sqlDB.SetMaxOpenConns(mysqlConfig.MaxOpenConns)
-	logger.Logger.Info(fmt.Sprintf("设置最大打开连接数为: %d", mysqlConfig.MaxOpenConns))
+	// logger.Logger.Info(fmt.Sprintf("设置最大打开连接数为: %d", mysqlConfig.MaxOpenConns))
 	sqlDB.SetMaxIdleConns(mysqlConfig.MaxIdleConns)
-	logger.Logger.Info(fmt.Sprintf("设置最大空闲连接数为: %d", mysqlConfig.MaxIdleConns))
+	// logger.Logger.Info(fmt.Sprintf("设置最大空闲连接数为: %d", mysqlConfig.MaxIdleConns))
 	sqlDB.SetConnMaxLifetime(mysqlConfig.ConnMaxLife)
-	logger.Logger.Info(fmt.Sprintf("设置连接最大生存时间为: %v", mysqlConfig.ConnMaxLife))
+	// logger.Logger.Info(fmt.Sprintf("设置连接最大生存时间为: %v", mysqlConfig.ConnMaxLife))
 
 	// 自动迁移数据表
 	if err := DB.AutoMigrate(&models.User{}, &models.Role{}, &models.UserRole{}, &models.Permission{}, &models.RolePermission{}); err != nil {

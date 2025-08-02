@@ -53,11 +53,10 @@ func main() {
 		logger.Logger.Fatal("数据库初始化失败", zap.Error(err))
 	}
 	defer database.CloseDB()
-	logger.Logger.Info("数据库连接成功")
 
 	// 初始化Casbin和角色权限
 	if err := database.InitCasbinAndPermissions(); err != nil {
-		logger.Logger.Fatal("Casbin和角色权限初始化失败", zap.Error(err))
+		logger.Logger.Fatal("角色权限初始化失败", zap.Error(err))
 	}
 
 	// 初始化管理员用户
@@ -65,7 +64,7 @@ func main() {
 		logger.Logger.Error("初始化管理员用户失败", zap.Error(err))
 	}
 
-	logger.Logger.Info("Casbin权限控制和角色权限初始化成功")
+	logger.Logger.Info("权限控制和角色权限初始化成功")
 
 	// 设置Gin模式
 	if config.AppConfig.App.Env == "production" {

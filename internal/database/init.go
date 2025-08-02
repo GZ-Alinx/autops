@@ -138,6 +138,12 @@ func InitRolesAndPermissions() error {
 		return fmt.Errorf("获取admin角色失败: %w", err)
 	}
 
+	// 获取user角色
+	var userRole models.Role
+	if err := DB.Where("name = ?", "user").First(&userRole).Error; err != nil {
+		return fmt.Errorf("获取user角色失败: %w", err)
+	}
+
 	// 获取所有权限
 	var allPermissions []models.Permission
 	if err := DB.Find(&allPermissions).Error; err != nil {
@@ -149,20 +155,35 @@ func InitRolesAndPermissions() error {
 		return fmt.Errorf("为admin角色分配权限失败: %w", err)
 	}
 
-	// 获取user角色
-	var userRole models.Role
-	if err := DB.Where("name = ?", "user").First(&userRole).Error; err != nil {
-		return fmt.Errorf("获取user角色失败: %w", err)
+	// 为user角色分配查看自己信息的权限
+	var viewSelfPermission models.Permission
+	if err := DB.Where("resource = ? AND action = ?", "/api/v1/users/*", "GET").First(&viewSelfPermission).Error; err != nil {
+		return fmt.Errorf("获取查看用户详情权限失败: %w", err)
 	}
 
-	// 为user角色分配部分权限
-	var userPermissions []models.Permission
-	if err := DB.Where("resource IN (?, ?)", "/api/v1/users", "/api/v1/users/:id").Where("action = ?", "GET").Find(&userPermissions).Error; err != nil {
-		return fmt.Errorf("获取用户权限失败: %w", err)
+	// 先删除user角色的所有现有权限
+	if err := DB.Unscoped().Where("role_id = ?", userRole.ID).Delete(&models.RolePermission{}).Error; err != nil {
+		return fmt.Errorf("删除user角色现有权限失败: %w", err)
 	}
 
-	if err := DB.Model(&userRole).Association("Permissions").Replace(userPermissions); err != nil {
-		return fmt.Errorf("为user角色分配权限失败: %w", err)
+	// 添加查看自己信息的权限
+	userPermission := models.RolePermission{
+		RoleID:       userRole.ID,
+		PermissionID: viewSelfPermission.ID,
+	}
+	if err := DB.Create(&userPermission).Error; err != nil {
+		return fmt.Errorf("为user角色添加权限失败: %w", err)
+	}
+
+	// 同步到Casbin
+	if _, err := global.Enforcer.AddPolicy("user", viewSelfPermission.Resource, viewSelfPermission.Action); err != nil {
+		logger.Logger.Error("同步权限到Casbin失败", zap.String("resource", viewSelfPermission.Resource), zap.String("action", viewSelfPermission.Action), zap.Error(err))
+	}
+
+	// 保存Casbin策略
+	if err := global.Enforcer.SavePolicy(); err != nil {
+		logger.Logger.Error("保存Casbin策略失败", zap.Error(err))
+		return fmt.Errorf("保存Casbin策略失败: %w", err)
 	}
 
 	// 4. 刷新Casbin策略

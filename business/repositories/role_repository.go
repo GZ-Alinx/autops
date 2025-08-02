@@ -1,6 +1,8 @@
 package repositories
 
 import (
+	"fmt"
+
 	"github.com/GZ-Alinx/autops/business/models"
 	"github.com/GZ-Alinx/autops/internal/database"
 	"gorm.io/gorm"
@@ -73,8 +75,28 @@ func (r *roleRepository) Update(role *models.Role) error {
 
 // Delete 删除角色
 func (r *roleRepository) Delete(id uint) error {
+	// 获取角色信息
+	role, err := r.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	// 检查是否为受保护角色
+	protectedRoles := map[string]bool{
+		"admin": true,
+		"user":  true,
+	}
+
+	if protectedRoles[role.Name] {
+		return fmt.Errorf("角色 '%s' 是系统内置角色，无法删除", role.Name)
+	}
+
 	// 先删除用户角色关联
 	if err := r.db.Table("user_roles").Where("role_id = ?", id).Delete(nil).Error; err != nil {
+		return err
+	}
+	// 删除角色权限关联
+	if err := r.db.Table("role_permissions").Where("role_id = ?", id).Delete(nil).Error; err != nil {
 		return err
 	}
 	// 再删除角色

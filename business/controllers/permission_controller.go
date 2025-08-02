@@ -488,7 +488,11 @@ func (pc *PermissionController) DeleteRole(c *gin.Context) {
 
 	// 需要实现Delete方法
 	if err := roleRepo.Delete(uint(roleID)); err != nil {
-		response.InternalServerError(c, fmt.Errorf("删除角色失败: %v", err))
+		if strings.Contains(err.Error(), "系统内置角色，无法删除") {
+			response.BadRequest(c, err)
+		} else {
+			response.Forbidden(c, fmt.Errorf("删除角色失败: %v", err))
+		}
 		return
 	}
 
