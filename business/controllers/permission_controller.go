@@ -271,25 +271,20 @@ func (pc *PermissionController) RemovePolicy(c *gin.Context) {
 // @Description 获取系统中所有的RBAC权限策略
 // @Tags 权限管理
 // @Produce application/json
-// @Success 200 {object} response.Response{data=[]string}
+// @Success 200 {object} response.Response{data=[]models.Permission}
 // @Failure 500 {object} response.Response{msg=string}
 // @Security ApiKeyAuth
 // @Router /permissions/policies [get]
 func (pc *PermissionController) GetPolicies(c *gin.Context) {
-	// 获取所有策略
-	logger.Logger.Info("正在获取所有权限策略")
-	policies, err := global.Enforcer.GetPolicy()
-	if err != nil {
+	// 从权限表获取所有权限
+	logger.Logger.Info("正在从权限表获取所有权限策略")
+	var permissions []models.Permission
+	if err := database.DB.Preload("Roles").Find(&permissions).Error; err != nil {
 		logger.Logger.Error("获取权限策略失败: " + err.Error())
 		response.InternalServerError(c, fmt.Errorf("获取权限策略失败: %v", err))
 		return
 	}
-	// 转换策略为字符串格式
-	var policyStrings []string
-	for _, p := range policies {
-		policyStrings = append(policyStrings, strings.Join(p, ","))
-	}
-	response.OkWithData(c, policyStrings)
+	response.OkWithData(c, permissions)
 }
 
 // @Summary 创建角色
