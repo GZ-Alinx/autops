@@ -26,8 +26,8 @@ func NewPermissionController() *PermissionController {
 	return &PermissionController{}
 }
 
-// @Summary 添加权限策略
-// @Description 为角色添加资源访问权限
+// @Summary 添加权限
+// @Description 添加资源访问权限
 // @Tags 权限管理
 // @Accept application/json
 // @Produce application/json
@@ -47,13 +47,13 @@ func (pc *PermissionController) AddPolicy(c *gin.Context) {
 
 	// 添加权限策略
 	validMethods := map[string]bool{"GET": true, "POST": true, "PUT": true, "DELETE": true, "PATCH": true}
-	if req.Role == "" || req.Path == "" || req.Method == "" || !validMethods[req.Method] {
-		logger.Logger.Warn("添加权限策略失败: 无效的请求参数", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
-		response.BadRequest(c, fmt.Errorf("无效的请求参数: 角色、路径不能为空且方法必须为GET/POST/PUT/DELETE/PATCH之一"))
+	if req.Describe == "" || req.Path == "" || req.Method == "" || !validMethods[req.Method] {
+		logger.Logger.Warn("添加权限策略失败: 无效的请求参数", zap.String("describe", req.Describe), zap.String("path", req.Path), zap.String("method", req.Method))
+		response.BadRequest(c, fmt.Errorf("无效的请求参数: 描述、路径不能为空且方法必须为GET/POST/PUT/DELETE/PATCH之一"))
 		return
 	}
 
-	logger.Logger.Info("开始添加权限策略", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
+	logger.Logger.Info("开始添加权限策略", zap.String("describe", req.Describe), zap.String("path", req.Path), zap.String("method", req.Method))
 
 	if global.Enforcer == nil {
 		logger.Logger.Error("添加权限策略失败: 权限管理器未初始化")
@@ -80,7 +80,7 @@ func (pc *PermissionController) AddPolicy(c *gin.Context) {
 		permission = models.Permission{
 			Resource:    req.Path,
 			Action:      req.Method,
-			Description: fmt.Sprintf("%s %s权限", req.Method, req.Path),
+			Description: req.Describe,
 		}
 		if err := database.DB.Create(&permission).Error; err != nil {
 			logger.Logger.Error("创建权限失败", zap.String("path", req.Path), zap.String("method", req.Method), zap.Error(err))
@@ -88,16 +88,25 @@ func (pc *PermissionController) AddPolicy(c *gin.Context) {
 			return
 		}
 		logger.Logger.Info("创建权限成功", zap.Int("permissionID", int(permission.ID)), zap.String("path", req.Path), zap.String("method", req.Method))
+	} else {
+		// 更新现有权限的描述
+		permission.Description = req.Describe
+		if err := database.DB.Save(&permission).Error; err != nil {
+			logger.Logger.Error("更新权限描述失败", zap.Int("permissionID", int(permission.ID)), zap.Error(err))
+			response.InternalServerError(c, fmt.Errorf("更新权限描述失败: %v", err))
+			return
+		}
+		logger.Logger.Info("更新权限描述成功", zap.Int("permissionID", int(permission.ID)))
 	}
 
-	// 检查角色是否存在
+	// 获取默认角色（user）
 	var role models.Role
-	if err := database.DB.Where("name = ?", req.Role).First(&role).Error; err != nil {
-		logger.Logger.Error("查询角色失败", zap.String("role", req.Role), zap.Error(err))
-		response.InternalServerError(c, fmt.Errorf("查询角色失败: %v", err))
+	if err := database.DB.Where("name = ?", "user").First(&role).Error; err != nil {
+		logger.Logger.Error("查询默认角色失败", zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("查询默认角色失败: %v", err))
 		return
 	}
-	logger.Logger.Info("查询角色成功", zap.Int("roleID", int(role.ID)), zap.String("roleName", role.Name))
+	logger.Logger.Info("查询默认角色成功", zap.Int("roleID", int(role.ID)), zap.String("roleName", role.Name))
 
 	// 检查角色权限关联是否已存在
 	var rolePermission models.RolePermission
@@ -114,7 +123,7 @@ func (pc *PermissionController) AddPolicy(c *gin.Context) {
 	}
 
 	if !errors.Is(result.Error, gorm.ErrRecordNotFound) {
-		logger.Logger.Warn("权限策略已存在", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
+		logger.Logger.Warn("权限策略已存在", zap.String("role", req.Describe), zap.String("path", req.Path), zap.String("method", req.Method))
 		response.BadRequest(c, fmt.Errorf("权限策略已存在"))
 		return
 	}
@@ -132,19 +141,19 @@ func (pc *PermissionController) AddPolicy(c *gin.Context) {
 	logger.Logger.Info("创建角色权限关联成功", zap.Int("roleID", int(role.ID)), zap.Int("permissionID", int(permission.ID)))
 
 	// 同步到casbin_rule
-	logger.Logger.Info("开始同步权限策略到casbin", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
-	ok, err := global.Enforcer.AddPolicy(req.Role, req.Path, req.Method)
+	logger.Logger.Info("开始同步权限策略到casbin", zap.String("role", role.Name), zap.String("path", req.Path), zap.String("method", req.Method))
+	ok, err := global.Enforcer.AddPolicy(role.Name, req.Path, req.Method)
 	if err != nil {
-		logger.Logger.Error("添加权限策略失败", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method), zap.Error(err))
+		logger.Logger.Error("添加权限策略失败", zap.String("role", req.Describe), zap.String("path", req.Path), zap.String("method", req.Method), zap.Error(err))
 		response.InternalServerError(c, fmt.Errorf("添加权限策略失败: %v", err))
 		return
 	}
 	if !ok {
-		logger.Logger.Warn("权限策略已存在于casbin", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
+		logger.Logger.Warn("权限策略已存在于casbin", zap.String("role", role.Name), zap.String("path", req.Path), zap.String("method", req.Method))
 		response.BadRequest(c, fmt.Errorf("权限策略已存在"))
 		return
 	}
-	logger.Logger.Info("添加权限策略到casbin成功", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
+	logger.Logger.Info("添加权限策略到casbin成功", zap.String("role", role.Name), zap.String("path", req.Path), zap.String("method", req.Method))
 
 	// 保存策略变更
 	if err := global.Enforcer.SavePolicy(); err != nil {
@@ -154,7 +163,7 @@ func (pc *PermissionController) AddPolicy(c *gin.Context) {
 	}
 	logger.Logger.Info("保存权限策略成功")
 
-	logger.Logger.Info("添加权限策略操作完成", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
+	logger.Logger.Info("添加权限策略操作完成", zap.String("describe", req.Describe), zap.String("path", req.Path), zap.String("method", req.Method))
 	response.OkWithData(c, "添加权限策略成功")
 }
 
@@ -178,36 +187,60 @@ func (pc *PermissionController) RemovePolicy(c *gin.Context) {
 	}
 
 	// 删除权限策略
-	if req.Role == "" || req.Path == "" || req.Method == "" {
-		logger.Logger.Warn("删除权限策略失败: 角色、路径和方法不能为空", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
-		response.BadRequest(c, fmt.Errorf("角色、路径和方法不能为空"))
+	if req.Describe == "" || req.Path == "" || req.Method == "" {
+		logger.Logger.Warn("删除权限策略失败: 描述、路径和方法不能为空", zap.String("describe", req.Describe), zap.String("path", req.Path), zap.String("method", req.Method))
+		response.BadRequest(c, fmt.Errorf("描述、路径和方法不能为空"))
 		return
 	}
 
-	logger.Logger.Info("开始删除权限策略", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
+	logger.Logger.Info("开始删除权限策略", zap.String("describe", req.Describe), zap.String("path", req.Path), zap.String("method", req.Method))
 
 	if global.Enforcer == nil {
 		logger.Logger.Error("删除权限策略失败: 权限管理器未初始化")
 		response.InternalServerError(c, fmt.Errorf("权限管理器未初始化"))
 		return
-	} // 查询权限
+	}
+
+	// 查询权限
 	var permission models.Permission
 	if err := database.DB.Where("resource = ? AND action = ?", req.Path, req.Method).First(&permission).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Logger.Warn("权限不存在", zap.String("path", req.Path), zap.String("method", req.Method))
+			response.NotFound(c, fmt.Errorf("权限不存在"))
+			return
+		}
 		logger.Logger.Error("查询权限失败", zap.String("path", req.Path), zap.String("method", req.Method), zap.Error(err))
 		response.InternalServerError(c, fmt.Errorf("查询权限失败: %v", err))
 		return
 	}
 	logger.Logger.Info("查询权限成功", zap.Int("permissionID", int(permission.ID)), zap.String("path", req.Path), zap.String("method", req.Method))
 
-	// 查询角色
+	// 获取默认角色（user）
 	var role models.Role
-	if err := database.DB.Where("name = ?", req.Role).First(&role).Error; err != nil {
-		logger.Logger.Error("查询角色失败", zap.String("role", req.Role), zap.Error(err))
-		response.InternalServerError(c, fmt.Errorf("查询角色失败: %v", err))
+	if err := database.DB.Where("name = ?", "user").First(&role).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Logger.Warn("默认角色不存在")
+			response.NotFound(c, fmt.Errorf("默认角色不存在"))
+			return
+		}
+		logger.Logger.Error("查询默认角色失败", zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("查询默认角色失败: %v", err))
 		return
 	}
-	logger.Logger.Info("查询角色成功", zap.Int("roleID", int(role.ID)), zap.String("roleName", role.Name))
+	logger.Logger.Info("查询默认角色成功", zap.Int("roleID", int(role.ID)), zap.String("roleName", role.Name))
 
+	// 检查角色权限关联是否存在
+	var rolePermission models.RolePermission
+	if err := database.DB.Where("role_id = ? AND permission_id = ?", role.ID, permission.ID).First(&rolePermission).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Logger.Error("查询角色权限关联失败", zap.Int("roleID", int(role.ID)), zap.Int("permissionID", int(permission.ID)), zap.Error(err))
+			response.InternalServerError(c, fmt.Errorf("查询角色权限关联失败: %v", err))
+			return
+		}
+		logger.Logger.Warn("角色权限关联不存在", zap.Int("roleID", int(role.ID)), zap.Int("permissionID", int(permission.ID)))
+		response.NotFound(c, fmt.Errorf("角色权限关联不存在"))
+		return
+	}
 	// 删除角色权限关联
 	if err := database.DB.Where("role_id = ? AND permission_id = ?", role.ID, permission.ID).Delete(&models.RolePermission{}).Error; err != nil {
 		logger.Logger.Error("删除角色权限关联失败", zap.Int("roleID", int(role.ID)), zap.Int("permissionID", int(permission.ID)), zap.Error(err))
@@ -233,19 +266,19 @@ func (pc *PermissionController) RemovePolicy(c *gin.Context) {
 	}
 
 	// 从casbin_rule删除策略
-	logger.Logger.Info("开始从casbin删除权限策略", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
-	ok, err := global.Enforcer.RemovePolicy(req.Role, req.Path, req.Method)
+	logger.Logger.Info("开始从casbin删除权限策略", zap.String("role", role.Name), zap.String("path", req.Path), zap.String("method", req.Method))
+	ok, err := global.Enforcer.RemovePolicy(role.Name, req.Path, req.Method)
 	if err != nil {
-		logger.Logger.Error("删除权限策略失败", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method), zap.Error(err))
+		logger.Logger.Error("删除权限策略失败", zap.String("role", role.Name), zap.String("path", req.Path), zap.String("method", req.Method), zap.Error(err))
 		response.InternalServerError(c, fmt.Errorf("删除权限策略失败: %v", err))
 		return
 	}
 	if !ok {
-		logger.Logger.Warn("权限策略不存在于casbin", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
+		logger.Logger.Warn("权限策略不存在于casbin", zap.String("role", role.Name), zap.String("path", req.Path), zap.String("method", req.Method))
 		response.BadRequest(c, fmt.Errorf("权限策略不存在"))
 		return
 	}
-	logger.Logger.Info("从casbin删除权限策略成功", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
+	logger.Logger.Info("从casbin删除权限策略成功", zap.String("role", role.Name), zap.String("path", req.Path), zap.String("method", req.Method))
 
 	// 保存策略变更
 	if err := global.Enforcer.SavePolicy(); err != nil {
@@ -255,15 +288,7 @@ func (pc *PermissionController) RemovePolicy(c *gin.Context) {
 	}
 	logger.Logger.Info("保存权限策略成功")
 
-	logger.Logger.Info("删除权限策略操作完成", zap.String("role", req.Role), zap.String("path", req.Path), zap.String("method", req.Method))
-	response.OkWithData(c, "删除权限策略成功")
-
-	// 保存策略变更
-	if err := global.Enforcer.SavePolicy(); err != nil {
-		response.InternalServerError(c, fmt.Errorf("保存权限策略失败: %v", err))
-		return
-	}
-
+	logger.Logger.Info("删除权限策略操作完成", zap.String("describe", req.Describe), zap.String("path", req.Path), zap.String("method", req.Method))
 	response.OkWithData(c, "删除权限策略成功")
 }
 
@@ -309,10 +334,12 @@ func (pc *PermissionController) CreateRole(c *gin.Context) {
 	roleRepo := repositories.NewRoleRepository()
 	roles, err := roleRepo.GetByNameIn([]string{req.Name})
 	if err != nil {
-		response.InternalServerError(c, fmt.Errorf("查询角色失败: %v", err))
-		return
-	}
-	if len(roles) > 0 {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Logger.Error("查询角色失败", zap.String("roleName", req.Name), zap.Error(err))
+			response.InternalServerError(c, fmt.Errorf("查询角色失败: %v", err))
+			return
+		}
+	} else if len(roles) > 0 {
 		response.BadRequest(c, fmt.Errorf("角色已存在"))
 		return
 	}
@@ -499,8 +526,218 @@ func (pc *PermissionController) DeleteRole(c *gin.Context) {
 	response.OkWithData(c, "角色删除成功")
 }
 
-// @Summary 更新用户角色
-// @Description 更新指定用户的角色列表（会替换现有角色）
+// @Summary 分配权限给角色
+// @Description 为指定角色分配权限，仅更新角色权限关联关系
+// @Tags 权限管理
+// @Accept json
+// @Produce json
+// @Param data body RolePermissionRequest true "角色ID和权限ID"
+// @Security ApiKeyAuth
+// @Success 200 {object} response.Response{data=string}
+// @Failure 400 {object} response.Response{msg=string}
+// @Failure 404 {object} response.Response{msg=string}
+// @Failure 500 {object} response.Response{msg=string}
+// @Router /permissions/role-permission [post]
+func (pc *PermissionController) AssignPermissionToRole(c *gin.Context) {
+	var req RolePermissionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Logger.Warn("分配权限给角色失败: 请求参数验证失败", zap.Error(err))
+		response.BadRequest(c, fmt.Errorf("请求参数验证失败: %v", err))
+		return
+	}
+
+	logger.Logger.Info("开始分配权限给角色", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID))
+
+	// 检查角色是否存在
+	var role models.Role
+	if err := database.DB.First(&role, req.RoleID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Logger.Error("角色不存在", zap.Uint("roleID", req.RoleID))
+			response.NotFound(c, fmt.Errorf("角色不存在"))
+			return
+		}
+		logger.Logger.Error("查询角色失败", zap.Uint("roleID", req.RoleID), zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("查询角色失败: %v", err))
+		return
+	}
+
+	// 检查权限是否存在
+	var permission models.Permission
+	if err := database.DB.First(&permission, req.PermissionID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Logger.Error("权限不存在", zap.Uint("permissionID", req.PermissionID))
+			response.NotFound(c, fmt.Errorf("权限不存在"))
+			return
+		}
+		logger.Logger.Error("查询权限失败", zap.Uint("permissionID", req.PermissionID), zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("查询权限失败: %v", err))
+		return
+	}
+
+	// 检查并创建/更新角色权限关联
+	rolePermission := models.RolePermission{
+		RoleID:       req.RoleID,
+		PermissionID: req.PermissionID,
+	}
+
+	// 首先尝试删除已存在的关联（包括软删除的）
+	if err := database.DB.Unscoped().Where("role_id = ? AND permission_id = ?", req.RoleID, req.PermissionID).Delete(&models.RolePermission{}).Error; err != nil {
+		logger.Logger.Error("删除已存在的角色权限关联失败", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID), zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("删除已存在的角色权限关联失败: %v", err))
+		return
+	}
+
+	// 创建新的角色权限关联
+	if err := database.DB.Create(&rolePermission).Error; err != nil {
+		logger.Logger.Error("创建角色权限关联失败", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID), zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("创建角色权限关联失败: %v", err))
+		return
+	}
+	logger.Logger.Info("创建角色权限关联成功", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID))
+
+	// 同步到casbin_rule
+	logger.Logger.Info("开始同步权限策略到casbin", zap.String("role", role.Name), zap.String("path", permission.Resource), zap.String("method", permission.Action))
+	ok, err := global.Enforcer.AddPolicy(role.Name, permission.Resource, permission.Action)
+	if err != nil {
+		logger.Logger.Error("添加权限策略失败", zap.String("role", role.Name), zap.String("path", permission.Resource), zap.String("method", permission.Action), zap.Error(err))
+		// 回滚角色权限关联创建（物理删除）
+		if err := database.DB.Unscoped().Delete(&rolePermission).Error; err != nil {
+			logger.Logger.Error("回滚角色权限关联失败", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID), zap.Error(err))
+		}
+		response.InternalServerError(c, fmt.Errorf("同步权限策略失败: %v", err))
+		return
+	}
+	if !ok {
+		logger.Logger.Warn("权限策略已存在于casbin", zap.String("role", role.Name), zap.String("path", permission.Resource), zap.String("method", permission.Action))
+	}
+
+	// 保存策略变更
+	if err := global.Enforcer.SavePolicy(); err != nil {
+		logger.Logger.Error("保存权限策略失败", zap.Error(err))
+		// 回滚角色权限关联创建（物理删除）
+		if err := database.DB.Unscoped().Delete(&rolePermission).Error; err != nil {
+			logger.Logger.Error("回滚角色权限关联失败", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID), zap.Error(err))
+		}
+		response.InternalServerError(c, fmt.Errorf("保存权限策略失败: %v", err))
+		return
+	}
+	logger.Logger.Info("保存权限策略成功")
+
+	logger.Logger.Info("分配权限给角色操作完成", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID))
+	response.OkWithData(c, "分配权限给角色成功")
+}
+
+// @Summary 移除角色的权限
+// @Description 移除指定角色的特定权限，仅更新角色权限关联关系
+// @Tags 权限管理
+// @Accept json
+// @Produce json
+// @Param data body RolePermissionRequest true "角色ID和权限ID"
+// @Security ApiKeyAuth
+// @Success 200 {object} response.Response{data=string}
+// @Failure 400 {object} response.Response{msg=string}
+// @Failure 404 {object} response.Response{msg=string}
+// @Failure 500 {object} response.Response{msg=string}
+// @Router /permissions/role-permission [delete]
+func (pc *PermissionController) RemovePermissionFromRole(c *gin.Context) {
+	var req RolePermissionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		logger.Logger.Warn("移除角色权限失败: 请求参数验证失败", zap.Error(err))
+		response.BadRequest(c, fmt.Errorf("请求参数验证失败: %v", err))
+		return
+	}
+
+	logger.Logger.Info("开始移除角色权限", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID))
+
+	// 检查角色是否存在
+	var role models.Role
+	if err := database.DB.First(&role, req.RoleID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Logger.Error("角色不存在", zap.Uint("roleID", req.RoleID))
+			response.NotFound(c, fmt.Errorf("角色不存在"))
+			return
+		}
+		logger.Logger.Error("查询角色失败", zap.Uint("roleID", req.RoleID), zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("查询角色失败: %v", err))
+		return
+	}
+
+	// 检查权限是否存在
+	var permission models.Permission
+	if err := database.DB.First(&permission, req.PermissionID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Logger.Error("权限不存在", zap.Uint("permissionID", req.PermissionID))
+			response.NotFound(c, fmt.Errorf("权限不存在"))
+			return
+		}
+		logger.Logger.Error("查询权限失败", zap.Uint("permissionID", req.PermissionID), zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("查询权限失败: %v", err))
+		return
+	}
+
+	// 检查角色权限关联是否存在（包括已软删除的）
+	var rolePermission models.RolePermission
+	if err := database.DB.Unscoped().Where("role_id = ? AND permission_id = ?", req.RoleID, req.PermissionID).First(&rolePermission).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Logger.Error("查询角色权限关联失败", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID), zap.Error(err))
+			response.InternalServerError(c, fmt.Errorf("查询角色权限关联失败: %v", err))
+			return
+		}
+		logger.Logger.Warn("角色权限关联不存在", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID))
+		response.NotFound(c, fmt.Errorf("角色权限关联不存在"))
+		return
+	}
+
+	// 物理删除角色权限关联
+	if err := database.DB.Unscoped().Delete(&rolePermission).Error; err != nil {
+		logger.Logger.Error("删除角色权限关联失败", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID), zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("删除角色权限关联失败: %v", err))
+		return
+	}
+	logger.Logger.Info("删除角色权限关联成功", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID))
+
+	// 如果权限无关联角色，删除权限
+	var count int64
+	database.DB.Model(&models.RolePermission{}).Where("permission_id = ?", req.PermissionID).Count(&count)
+	logger.Logger.Info("检查权限关联角色数量", zap.Int64("count", count), zap.Uint("permissionID", req.PermissionID))
+	if count == 0 {
+		logger.Logger.Info("权限无关联角色，将删除权限", zap.Uint("permissionID", req.PermissionID))
+		if err := database.DB.Delete(&permission).Error; err != nil {
+			logger.Logger.Error("删除权限失败", zap.Uint("permissionID", req.PermissionID), zap.Error(err))
+			response.InternalServerError(c, fmt.Errorf("删除权限失败: %v", err))
+			return
+		}
+		logger.Logger.Info("删除权限成功", zap.Uint("permissionID", req.PermissionID))
+	} else {
+		logger.Logger.Info("权限仍有关联角色，不删除权限", zap.Uint("permissionID", req.PermissionID), zap.Int64("关联角色数", count))
+	}
+
+	// 从casbin_rule删除策略
+	logger.Logger.Info("开始从casbin删除权限策略", zap.String("role", role.Name), zap.String("path", permission.Resource), zap.String("method", permission.Action))
+	ok, err := global.Enforcer.RemovePolicy(role.Name, permission.Resource, permission.Action)
+	if err != nil {
+		logger.Logger.Error("删除权限策略失败", zap.String("role", role.Name), zap.String("path", permission.Resource), zap.String("method", permission.Action), zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("删除权限策略失败: %v", err))
+		return
+	}
+	if !ok {
+		logger.Logger.Warn("权限策略不存在于casbin", zap.String("role", role.Name), zap.String("path", permission.Resource), zap.String("method", permission.Action))
+	}
+
+	// 保存策略变更
+	if err := global.Enforcer.SavePolicy(); err != nil {
+		logger.Logger.Error("保存权限策略失败", zap.Error(err))
+		response.InternalServerError(c, fmt.Errorf("保存权限策略失败: %v", err))
+		return
+	}
+	logger.Logger.Info("保存权限策略成功")
+
+	logger.Logger.Info("移除角色权限操作完成", zap.Uint("roleID", req.RoleID), zap.Uint("permissionID", req.PermissionID))
+	response.OkWithData(c, "移除角色权限成功")
+}
+
+// @Summary 更新用户角色权限对接
+// @Description 更新指定用户的角色列表（会替换/增加现有角色）
 // @Tags 权限管理
 // @Accept json
 // @Produce json
@@ -556,11 +793,20 @@ func (pc *PermissionController) UpdateUserRole(c *gin.Context) {
 }
 
 // PolicyRequest 权限策略请求结构
-// @Description 权限策略请求参数，包含角色名称、资源路径和HTTP方法
+// @Description 权限策略请求参数，包含权限描述、资源路径和HTTP方法
 type PolicyRequest struct {
-	Role   string `json:"role" binding:"required"`   // 角色名称
-	Path   string `json:"path" binding:"required"`   // 资源路径
-	Method string `json:"method" binding:"required"` // HTTP方法
+	Describe string `json:"description" binding:"required"` // 权限描述
+	Path     string `json:"path" binding:"required"`        // 资源路径
+	Method   string `json:"method" binding:"required"`      // HTTP方法
+}
+
+// RolePermissionRequest 角色权限关联请求结构
+// @Description 角色权限关联请求参数，包含角色ID和权限ID
+// @Param RoleID body int true "角色ID"
+// @Param PermissionID body int true "权限ID"
+type RolePermissionRequest struct {
+	RoleID       uint `json:"role_id" binding:"required"`       // 角色ID
+	PermissionID uint `json:"permission_id" binding:"required"` // 权限ID
 }
 
 // CreateRoleRequest 创建角色请求结构

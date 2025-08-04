@@ -1,5 +1,18 @@
 basePath: /api/v1
 definitions:
+  controllers.RolePermissionRequest:
+    description: 角色权限关联请求参数
+    properties:
+      roleID:
+        description: 角色ID
+        type: integer
+      permissionID:
+        description: 权限ID
+        type: integer
+    required:
+    - roleID
+    - permissionID
+    type: object
   controllers.CreateRoleRequest:
     description: 创建新角色的请求参数
     properties:
@@ -45,13 +58,22 @@ definitions:
         $ref: '#/definitions/models.User'
     type: object
   controllers.PolicyRequest:
-    description: 权限策略请求参数，包含角色名称、资源路径和HTTP方法
+    description: 权限策略请求参数，包含权限描述、角色名称、资源路径和HTTP方法
     properties:
       method:
         description: HTTP方法
         type: string
+        enum:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - PATCH
       path:
         description: 资源路径
+        type: string
+      description:
+        description: 权限描述
         type: string
       role:
         description: 角色名称
@@ -59,6 +81,7 @@ definitions:
     required:
     - method
     - path
+    - description
     - role
     type: object
   controllers.RegisterRequest:
@@ -362,7 +385,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 为角色添加资源访问权限
+      description: 添加资源访问权限
       parameters:
       - description: 权限策略信息
         in: body
@@ -403,6 +426,117 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: 添加权限策略
+      tags:
+      - 权限管理
+  /permissions/role-permission:
+    post:
+      consumes:
+      - application/json
+      description: 为指定角色分配权限，仅更新角色权限关联关系
+      parameters:
+      - description: 角色ID和权限ID
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.RolePermissionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 分配权限给角色
+      tags:
+      - 权限管理
+    delete:
+      consumes:
+      - application/json
+      description: 移除指定角色的特定权限，仅更新角色权限关联关系
+      parameters:
+      - description: 角色ID和权限ID
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/controllers.RolePermissionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                data:
+                  type: string
+              type: object
+        "400":
+          description: Bad Request
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+        "404":
+          description: Not Found
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            allOf:
+            - $ref: '#/definitions/response.Response'
+            - properties:
+                msg:
+                  type: string
+              type: object
+      security:
+      - ApiKeyAuth: []
+      summary: 移除角色的权限
       tags:
       - 权限管理
   /permissions/user-role:

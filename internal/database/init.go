@@ -111,6 +111,8 @@ func InitRolesAndPermissions() error {
 		{Resource: "/api/v1/permissions/policies", Action: "GET", Description: "获取所有权限策略"},
 		{Resource: "/api/v1/permissions/user-role", Action: "PUT", Description: "更新用户角色"},
 		{Resource: "/api/v1/test", Action: "GET", Description: "示例接口"},
+		{Resource: "/api/v1/permissions/role-permission", Action: "DELETE", Description: "角色权限关联删除"},
+		{Resource: "/api/v1/permissions/role-permission", Action: "POST", Description: "角色权限关联添加"},
 	}
 
 	for _, permission := range permissions {

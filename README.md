@@ -404,7 +404,7 @@ router.Use(middleware.CorsMiddleware())
   ```
 
 ### 5.4 权限管理API
-#### 5.4.1 更新用户角色
+#### 5.4.1 更新用户角色权限关联
 - **路径**: `/permissions/user-role`
 - **方法**: `PUT`
 - **认证**: 需要JWT

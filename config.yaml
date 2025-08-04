@@ -1,6 +1,7 @@
 app:
   name: "autops"
-  env: "production" # 开发模式 development，默认生产模式
+  # env: "production" # 开发模式 development，默认生产模式
+  env: "development" #  生产production
   port: 8888
   timeout: 30s
 

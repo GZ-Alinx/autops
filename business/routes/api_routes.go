@@ -37,6 +37,8 @@ func registerAPIRoutes(api *gin.RouterGroup) {
 		perm.DELETE("/policy", permController.RemovePolicy)
 		perm.GET("/policies", permController.GetPolicies)
 		perm.PUT("/user-role", permController.UpdateUserRole)
+		perm.POST("/role-permission", permController.AssignPermissionToRole)
+		perm.DELETE("/role-permission", permController.RemovePermissionFromRole)
 	}
 
 	// 角色管理接口
